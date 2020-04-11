@@ -18,6 +18,12 @@
 
 void HexDump(uint8_t * array, uint32_t size);
 void printHash(uint8_t * bytes, uint32_t size, int hasht);
+void errorHandler(ESYS_CONTEXT *esys_context,TSS2_TCTI_CONTEXT *tcti_inner,TSS2_TCTI_CONTEXT *tcti_context){
+    Esys_Finalize(&esys_context);
+    Tss2_Tcti_Finalize  (tcti_inner);
+    Tss2_Tcti_Finalize  (tcti_context);
+    exit(-1);
+}
 
 int
 main(int argc, char *argv[])
@@ -82,7 +88,7 @@ main(int argc, char *argv[])
     }
 
     //根据得到的size calloc空间
-    tcti_context = calloc(1, tcti_size);
+    tcti_context = (TSS2_TCTI_CONTEXT*)calloc(1, tcti_size);
     if (tcti_inner == NULL) {
         printf("TPM Startup FAILED! Error tcti init\r\n");
         exit(1);
@@ -101,21 +107,21 @@ main(int argc, char *argv[])
     rc = Esys_Initialize(&esys_context, tcti_context, &abiVersion);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_Initialize FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //启动
     rc = Esys_Startup(esys_context, TPM2_SU_CLEAR);
     if (rc != TSS2_RC_SUCCESS && rc != TPM2_RC_INITIALIZE) {
         printf("Esys_Startup FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //esys_context->timeout = timeout;
     rc = Esys_SetTimeout(esys_context, TSS2_TCTI_TIMEOUT_BLOCK);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_SetTimeout FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
 //     typedef struct {
@@ -134,7 +140,7 @@ main(int argc, char *argv[])
 
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_GetRandom FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //输出这个随机数
@@ -145,7 +151,7 @@ main(int argc, char *argv[])
     // UINT16 size;
     // BYTE buffer[1024];
     // } TPM2B_MAX_BUFFER;
-    char str[30] = {0};
+    char str[30] = "123";
     printf("\nInput data:");
      scanf("%s", str);
      UINT16 size = strlen(str);
@@ -177,7 +183,7 @@ main(int argc, char *argv[])
         
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_Hash FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     rc = Esys_Hash(                             
@@ -193,7 +199,7 @@ main(int argc, char *argv[])
         
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_Hash FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     rc = Esys_Hash(                             
@@ -209,7 +215,7 @@ main(int argc, char *argv[])
         
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_Hash FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //输出hash结果
@@ -224,13 +230,6 @@ main(int argc, char *argv[])
     Tss2_Tcti_Finalize  (tcti_inner);
     Tss2_Tcti_Finalize  (tcti_context); 
 
-    return 0;
-
-error:
-    //error, clean up and quit
-    Esys_Finalize(&esys_context);
-    Tss2_Tcti_Finalize  (tcti_inner);
-    Tss2_Tcti_Finalize  (tcti_context);
     return 0;
 }
 
@@ -249,7 +248,7 @@ void HexDump(uint8_t * array, uint32_t size)
 
 void printHash(uint8_t * bytes, uint32_t size, int h){
     printf("\nSHA%d:",h);
-    for(int i=0;i<size;i++){
+    for(uint32_t i=0;i<size;i++){
         printf("%02x",bytes[i]);
     }
     printf("\r\n");

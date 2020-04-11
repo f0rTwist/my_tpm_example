@@ -21,6 +21,12 @@
 
 void HexDump2(uint8_t * array, uint32_t size);
 void HexDump(uint8_t * array, uint32_t size);
+void errorHandler(ESYS_CONTEXT *esys_context,TSS2_TCTI_CONTEXT *tcti_inner,TSS2_TCTI_CONTEXT *tcti_context){
+    Esys_Finalize(&esys_context);
+    Tss2_Tcti_Finalize  (tcti_inner);
+    Tss2_Tcti_Finalize  (tcti_context);
+    exit(-1);
+}
 
 int
 main(int argc, char *argv[])
@@ -58,7 +64,7 @@ main(int argc, char *argv[])
         printf("tcti initialization FAILED! Response Code : 0x%x\r\n", rc);
         return rc;
     }
-    tcti_context = calloc(1, tcti_size);
+    tcti_context = static_cast<TSS2_TCTI_CONTEXT*> (calloc(1, tcti_size));
     if (tcti_inner == NULL) {
         printf("TPM Startup FAILED! Error tcti init\r\n");
         exit(1);
@@ -72,18 +78,18 @@ main(int argc, char *argv[])
     rc = Esys_Initialize(&esys_context, tcti_context, &abiVersion);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_Initialize FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
     rc = Esys_Startup(esys_context, TPM2_SU_CLEAR);
     if (rc != TSS2_RC_SUCCESS && rc != TPM2_RC_INITIALIZE) {
         printf("Esys_Startup FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     rc = Esys_SetTimeout(esys_context, TSS2_TCTI_TIMEOUT_BLOCK);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_SetTimeout FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     ESYS_TR primaryHandle = ESYS_TR_NONE;
@@ -141,12 +147,13 @@ main(int argc, char *argv[])
             .authPolicy = {                                                                                          //使用key的可选policy，是使用对象的nameAlg计算的。如果没有auth policy，则为空
                  .size = 0,
              },
-            .parameters.rsaDetail = {                                                                      //TPMU_PUBLIC_PARMS 算法或结构细节,这里type是rsa 
+            .parameters={
+                .rsaDetail = {                                                                      //TPMU_PUBLIC_PARMS 算法或结构细节,这里type是rsa 
                  .symmetric = {                                                                                      //定义可能包含在密钥的公共部分中的参数定义结构
                      .algorithm = TPM2_ALG_AES,                                                   //对于受限解密密钥，应设置为受支持的对称算法，密钥大小和模式。
                                                                                                                                     //如果密钥不是受限解密密钥，则此字段应设置为TPM_ALG_NULL
-                     .keyBits.aes = 128,                                                                         //密钥大小
-                     .mode.aes = TPM2_ALG_CFB},                                                 //在parent object的参数区域中使用时，它应该是TPM_ALG_CFB
+                     .keyBits={.aes = 128},                                                                         //密钥大小
+                     .mode = {.aes = TPM2_ALG_CFB} },                                                 //在parent object的参数区域中使用时，它应该是TPM_ALG_CFB
 
                  .scheme = {                                                                                            //对于不受限制的签名密钥  TPM_ALG_RSAPSS TPM_ALG_RSASSA或TPM_ALG_NULL
                                                                                                                                     //对于受限制的签名密钥  TPM_ALG_RSAPSS或TPM_ALG_RSASSA
@@ -156,13 +163,15 @@ main(int argc, char *argv[])
                   },
                  .keyBits = 2048,                                                                                   //公共模数的位数
                  .exponent = 0,                                                                                      //零，表示该指数是默认值2的16次方 + 1
+                 },
              },
-            .unique.rsa = {                                                                                           //唯一标识符，对于非对称密钥rsa，这将是公钥
+            .unique = {
+                .rsa = {                                                                                           //唯一标识符，对于非对称密钥rsa，这将是公钥
                                                                                                                                     //TPM2B_PUBLIC_KEY_RSA 
                  .size = 0,                                                                                         
                  .buffer = {},                                                                                             //公钥的buffer
-             },
-        },
+             }},
+        }
     };
 
 
@@ -189,7 +198,7 @@ main(int argc, char *argv[])
     rc = Esys_TR_SetAuth(esys_context, ESYS_TR_RH_OWNER, &authValue);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_TR_SetAuth FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     
@@ -218,14 +227,14 @@ main(int argc, char *argv[])
                            &creationTicket);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_CreatePrimary FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //这里传入生成的ESYS_TR对象primary关联的handle来设置身份验证值authValue
     rc = Esys_TR_SetAuth(esys_context, primaryHandle, &authValuePrimary);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_TR_SetAuth FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
     //至此父级对象Primary的创建过程完毕，接下来是它的子级loaded的创建
 
@@ -259,6 +268,7 @@ main(int argc, char *argv[])
 
     //这里和上面的 inPublic作用相似
     //设置相关属性
+    
     TPM2B_PUBLIC inPublic2 = {
         .size = 0,
         .publicArea = {
@@ -272,18 +282,21 @@ main(int argc, char *argv[])
             .authPolicy = {
                  .size = 0,
              },
-            .parameters.symDetail = {                                                                       //对称分组密码细节
+            .parameters = { .symDetail = {                                                                       //对称分组密码细节
                  .sym = {
                      .algorithm = TPM2_ALG_AES,                                                       //下面各项可参照上面inPublic注释
                      .keyBits = {.aes = 128},
                      .mode = {.aes = TPM2_ALG_CFB}}
+             }
              },
-            .unique.sym = {
+            .unique = {.
+                sym = {
                  .size = 0,
                  .buffer = {}
-             }
+                } }
         }
     };
+    
 
     TPM2B_DATA outsideInfo2 = {
         .size = 0,
@@ -318,7 +331,7 @@ main(int argc, char *argv[])
                     &creationData2, &creationHash2, &creationTicket2);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_Create FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("AES key created.\r\n");
@@ -332,7 +345,7 @@ main(int argc, char *argv[])
 
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_Create FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("AES key loaded.\r\n");
@@ -341,7 +354,7 @@ main(int argc, char *argv[])
     rc = Esys_TR_SetAuth(esys_context, loadedKeyHandle, &authKey2);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_TR_SetAuth FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     ESYS_TR keyHandle_handle = loadedKeyHandle;          //这里的TR对象是Load+setAuth以后的那个      
@@ -389,12 +402,12 @@ main(int argc, char *argv[])
         (rc == (TPM2_RC_COMMAND_CODE | TSS2_RESMGR_RC_LAYER)) ||
         (rc == (TPM2_RC_COMMAND_CODE | TSS2_RESMGR_TPM_RC_LAYER))) {
         printf("Command TPM2_EncryptDecrypt not supported by TPM.");
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
     
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_EncryptDecrypt FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("\nencrypted data:\r\n");
@@ -421,12 +434,12 @@ main(int argc, char *argv[])
         (rc == (TPM2_RC_COMMAND_CODE | TSS2_RESMGR_RC_LAYER)) ||
         (rc == (TPM2_RC_COMMAND_CODE | TSS2_RESMGR_TPM_RC_LAYER))) {
         printf("Command TPM2_EncryptDecrypt not supported by TPM.");
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_EncryptDecrypt FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("\ndecrypted data ");
@@ -435,14 +448,14 @@ main(int argc, char *argv[])
     if (outData2->size != inData.size ||
         memcmp(&outData2->buffer, &inData.buffer[0], outData2->size) != 0) {
         printf("Error: decrypted text not  equal to origin");
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //FlushContext将创建的对象删除 -> primaryhandle
     rc = Esys_FlushContext(esys_context, primaryHandle);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_FlushContext FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     primaryHandle = ESYS_TR_NONE;
@@ -451,19 +464,11 @@ main(int argc, char *argv[])
     rc = Esys_FlushContext(esys_context, loadedKeyHandle);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_FlushContext FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("\napplication done!\r\n");
     printf("clean up and quit\r\n");
-    Esys_Finalize(&esys_context);
-    Tss2_Tcti_Finalize  (tcti_inner);
-    Tss2_Tcti_Finalize  (tcti_context);
-    return 0;
-
-error:
-    //error, clean up and quit
-    printf("error! clean up and quit\r\n");
     Esys_Finalize(&esys_context);
     Tss2_Tcti_Finalize  (tcti_inner);
     Tss2_Tcti_Finalize  (tcti_context);

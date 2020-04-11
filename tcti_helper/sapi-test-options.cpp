@@ -26,21 +26,26 @@ typedef struct {
  * A table of tcti_map_entry_t structures. This is how we map a string
  * provided on the command line to the enumeration.
  */
+
+char dev []= "device";
+char sock []= "socket";
+char fuzz []= "fuzzing";
+char unknown []= "unknow";
 tcti_map_entry_t tcti_map_table[] = {
     {
-     .name = "device",
+     .name = dev,
      .type = DEVICE_TCTI,
      },
     {
-     .name = "socket",
+     .name = sock,
      .type = SOCKET_TCTI,
      },
     {
-     .name = "fuzzing",
+     .name =fuzz,
      .type = FUZZING_TCTI,
      },
     {
-     .name = "unknown",
+     .name = unknown,
      .type = UNKNOWN_TCTI,
      },
 };

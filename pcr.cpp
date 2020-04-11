@@ -15,6 +15,12 @@
 #define TSS_SAPI_FIRST_VERSION 108
 
 void HexDump(uint8_t * array, uint32_t size);
+void errorHandler(ESYS_CONTEXT *esys_context,TSS2_TCTI_CONTEXT *tcti_inner,TSS2_TCTI_CONTEXT *tcti_context){
+    Esys_Finalize(&esys_context);
+    Tss2_Tcti_Finalize  (tcti_inner);
+    Tss2_Tcti_Finalize  (tcti_context);
+    exit(-1);
+}
 
 int main(int argc, char *argv[])
 {
@@ -78,7 +84,7 @@ int main(int argc, char *argv[])
     }
 
     //根据得到的size calloc空间
-    tcti_context = calloc(1, tcti_size);
+    tcti_context = (TSS2_TCTI_CONTEXT*)calloc(1, tcti_size);
     if (tcti_inner == NULL) {
         printf("TPM Startup FAILED! Error tcti init\r\n");
         exit(1);
@@ -97,21 +103,21 @@ int main(int argc, char *argv[])
     rc = Esys_Initialize(&esys_context, tcti_context, &abiVersion);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_Initialize FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //启动
     rc = Esys_Startup(esys_context, TPM2_SU_CLEAR);
     if (rc != TSS2_RC_SUCCESS && rc != TPM2_RC_INITIALIZE) {
         printf("Esys_Startup FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //esys_context->timeout = timeout;
     rc = Esys_SetTimeout(esys_context, TSS2_TCTI_TIMEOUT_BLOCK);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_SetTimeout FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     int selected = 0;
@@ -131,7 +137,7 @@ int main(int argc, char *argv[])
     BYTE* selection = (BYTE*)calloc(selectionSize,sizeof(int));
 
     //下面是使用位运算计算选择bitmap来表示选中的PCR
-    for(int i=0;i<selectionSize;i++)
+    for(uint32_t i=0;i<selectionSize;i++)
     {
         selection[i] = i==selectionSize-1?1<<(selected%8):0b00000000;
     }
@@ -179,11 +185,11 @@ int main(int argc, char *argv[])
 
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_PCR_Read FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("Before PCR_Event:\r\n");
-    for(int i=0;i<pcrValues->count;i++){
+    for(uint32_t i=0;i<pcrValues->count;i++){
         TPM2B_DIGEST t = pcrValues->digests[i];
         HexDump(t.buffer,t.size);
         }
@@ -214,11 +220,11 @@ int main(int argc, char *argv[])
 
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_PCR_Event FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
 printf("PCR Event digests:\r\n");
-   for(int i=0;i<digestsEvent->count;i++){
+   for(uint32_t i=0;i<digestsEvent->count;i++){
        switch (digestsEvent->digests[i].hashAlg){
            case TPM2_ALG_SHA1:
                 HexDump(digestsEvent->digests[i].digest.sha1,20);
@@ -246,11 +252,11 @@ printf("PCR Event digests:\r\n");
 
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_PCR_Read FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     printf("After PCR_Event:\r\n");
-    for(int i=0;i<pcrValues->count;i++){
+    for(uint32_t i=0;i<pcrValues->count;i++){
         TPM2B_DIGEST t = pcrValues->digests[i];
         HexDump(t.buffer,t.size);
     }   
@@ -292,7 +298,7 @@ printf("PCR Event digests:\r\n");
 
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_PCR_exetend FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     rc = Esys_PCR_Read(
@@ -309,10 +315,10 @@ printf("PCR Event digests:\r\n");
     printf("After PCR_Extend:\r\n");
     if (rc != TPM2_RC_SUCCESS) {
         printf("Esys_PCR_Read FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
-    for(int i=0;i<pcrValues->count;i++){
+    for(uint32_t i=0;i<pcrValues->count;i++){
         TPM2B_DIGEST t = pcrValues->digests[i];
         HexDump(t.buffer,t.size);
     }   
@@ -323,13 +329,6 @@ printf("PCR Event digests:\r\n");
     Tss2_Tcti_Finalize  (tcti_inner);
     Tss2_Tcti_Finalize  (tcti_context); 
 
-    return 0;
-
-error:
-    //error, clean up and quit
-    Esys_Finalize(&esys_context);
-    Tss2_Tcti_Finalize  (tcti_inner);
-    Tss2_Tcti_Finalize  (tcti_context);
     return 0;
 }
 

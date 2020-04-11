@@ -19,6 +19,34 @@
 
 void HexDump(uint8_t * array, uint32_t size);
 
+void errorHandler(ESYS_CONTEXT *esys_context,TSS2_TCTI_CONTEXT *tcti_inner,TSS2_TCTI_CONTEXT *tcti_context){
+    Esys_Finalize(&esys_context);
+    Tss2_Tcti_Finalize  (tcti_inner);
+    Tss2_Tcti_Finalize  (tcti_context);
+    exit(-1);
+}
+
+void nverrorHandler(ESYS_TR nvHandle,TPM2B_NV_PUBLIC *nvPublic ,
+    TPM2B_NAME *nvName ,
+    TPM2B_MAX_NV_BUFFER *nv_test_data,
+    ESYS_CONTEXT *esys_context){
+
+    if (nvHandle != ESYS_TR_NONE) {
+        if (Esys_NV_UndefineSpace(esys_context,
+                                  ESYS_TR_RH_OWNER,
+                                  nvHandle,
+                                  ESYS_TR_PASSWORD,
+                                  ESYS_TR_NONE,
+                                  ESYS_TR_NONE) != TSS2_RC_SUCCESS) {
+        }
+    }
+
+    Esys_Free(nvPublic);
+    Esys_Free(nvName);
+    Esys_Free(nv_test_data);
+    exit(-1);
+}
+
 int main(){
     ESYS_TR nvHandle = ESYS_TR_NONE;
 
@@ -86,7 +114,7 @@ int main(){
     }
 
     //根据得到的size calloc空间
-    tcti_context  =  calloc(1, tcti_size);
+    tcti_context  =  (TSS2_TCTI_CONTEXT*)calloc(1, tcti_size);
     if (tcti_inner == NULL) {
         printf("TPM Startup FAILED! Error tcti init\r\n");
         exit(1);
@@ -105,21 +133,21 @@ int main(){
     rc = Esys_Initialize(&esys_context, tcti_context, &abiVersion);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_Initialize FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //启动
     rc = Esys_Startup(esys_context, TPM2_SU_CLEAR);
     if (rc != TSS2_RC_SUCCESS && rc != TPM2_RC_INITIALIZE) {
         printf("Esys_Startup FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     //esys_context->timeout = timeout;
     rc = Esys_SetTimeout(esys_context, TSS2_TCTI_TIMEOUT_BLOCK);
     if (rc != TSS2_RC_SUCCESS) {
         printf("Esys_SetTimeout FAILED! Response Code : 0x%x\r\n", rc);
-        goto error;
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
 
@@ -160,7 +188,8 @@ int main(){
 
  if (rc != TPM2_RC_SUCCESS ) {
         printf("Error esys define nv space! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
     TPM2B_MAX_NV_BUFFER nv_test_data = { .size = 20,
@@ -179,7 +208,8 @@ int main(){
     HexDump( nvName->name , nvName->size);
     if (rc != TPM2_RC_SUCCESS) {
         printf("Error: nv read public! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
 
 
@@ -194,7 +224,8 @@ int main(){
 
      if (rc != TPM2_RC_SUCCESS) {
         printf("Error esys nv write! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }
     Esys_Free(nvPublic);
     Esys_Free(nvName);
@@ -210,7 +241,8 @@ int main(){
 
      if (rc != TPM2_RC_SUCCESS) {
         printf("Error: nv read public! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }    
 
     
@@ -227,7 +259,8 @@ int main(){
 
     if (rc != TPM2_RC_SUCCESS) {
         printf("Error: Error esys nv read! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }    
 
     printf("after extend\n");
@@ -258,7 +291,7 @@ int main(){
 
     // if (rc != TPM2_RC_SUCCESS) {
     //     printf("Error: unseal data! Response Code : 0x%x\r\n", rc);
-    //     goto error;
+    //     errorHandler(esys_context,tcti_inner,tcti_context);
     // }    
 
     // printf("unseal data\n");
@@ -277,7 +310,8 @@ int main(){
         &nvName);
  if (rc != TPM2_RC_SUCCESS) {
         printf("Error: nv read public! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }    
 
     rc = Esys_NV_UndefineSpace(esys_context,
@@ -289,7 +323,8 @@ int main(){
                               );
     if (rc != TPM2_RC_SUCCESS) {
         printf("Error: NV_UndefineSpace! Response Code : 0x%x\r\n", rc);
-        goto error;
+        nverrorHandler(nvHandle,nvPublic,nvName,nv_test_data2,esys_context);
+        errorHandler(esys_context,tcti_inner,tcti_context);
     }    
 
     Esys_Free(nvPublic);
@@ -297,23 +332,6 @@ int main(){
     Esys_Free(nv_test_data2);
     return EXIT_SUCCESS;
 
- error:
-
-    if (nvHandle != ESYS_TR_NONE) {
-        if (Esys_NV_UndefineSpace(esys_context,
-                                  ESYS_TR_RH_OWNER,
-                                  nvHandle,
-                                  ESYS_TR_PASSWORD,
-                                  ESYS_TR_NONE,
-                                  ESYS_TR_NONE) != TSS2_RC_SUCCESS) {
-        }
-    }
-
-
-    Esys_Free(nvPublic);
-    Esys_Free(nvName);
-    Esys_Free(nv_test_data2);
-    return EXIT_FAILURE;
     }
 
     void HexDump(uint8_t * array, uint32_t size)
